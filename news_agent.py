@@ -65,27 +65,46 @@ def fetch_headlines(max_per_feed: int = 8) -> list[dict]:
     return unique
 
 
-def structure_news(headlines: list[dict], api_key: str) -> list[dict]:
-    """Send headlines to Gemini, get structured signals back. Retries once on 429."""
+def structure_news(headlines: list[dict], api_key: str, provider: str = "gemini") -> list[dict]:
+    """Send headlines to an LLM, get structured signals back. Retries once on 429.
+
+    provider: "gemini" (Google AI Studio key, starts with AIzaSy)
+              "groq"   (console.groq.com key, starts with gsk_)
+    """
     if not headlines:
         return []
     text = "\n".join(f"- [{h['source']}] {h['title']}" for h in headlines)
     prompt = PROMPT.replace("{headlines}", text)
-    payload = {"contents": [{"parts": [{"text": prompt}]}],
-               "generationConfig": {"temperature": 0.2}}
-    headers = {"x-goog-api-key": api_key}  # header, not URL: keeps key out of error messages/logs
+
+    if provider == "groq":
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        payload = {"model": "llama-3.3-70b-versatile",
+                   "messages": [{"role": "user", "content": prompt}],
+                   "temperature": 0.2}
+    else:
+        url = GEMINI_URL
+        headers = {"x-goog-api-key": api_key}  # header, not URL: keeps key out of errors/logs
+        payload = {"contents": [{"parts": [{"text": prompt}]}],
+                   "generationConfig": {"temperature": 0.2}}
+
     import time
     for attempt in (1, 2):
-        resp = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=60)
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
         if resp.status_code == 429 and attempt == 1:
             time.sleep(20)  # free-tier per-minute limit: wait and retry once
             continue
         if resp.status_code != 200:
             raise RuntimeError(
-                f"Gemini API error {resp.status_code}: "
+                f"{provider} API error {resp.status_code}: "
                 f"{resp.json().get('error', {}).get('message', 'unknown')[:200]}")
         break
-    raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+    body = resp.json()
+    if provider == "groq":
+        raw = body["choices"][0]["message"]["content"]
+    else:
+        raw = body["candidates"][0]["content"]["parts"][0]["text"]
     return parse_signals(raw)
 
 
@@ -115,10 +134,10 @@ def parse_signals(raw: str) -> list[dict]:
     return out
 
 
-def get_market_drivers(api_key: str) -> dict:
+def get_market_drivers(api_key: str, provider: str = "gemini") -> dict:
     """Full pipeline. Returns {'fetched_at', 'n_headlines', 'signals'}."""
     headlines = fetch_headlines()
-    signals = structure_news(headlines, api_key)
+    signals = structure_news(headlines, api_key, provider=provider)
     return {
         "fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "n_headlines": len(headlines),
