@@ -66,18 +66,25 @@ def fetch_headlines(max_per_feed: int = 8) -> list[dict]:
 
 
 def structure_news(headlines: list[dict], api_key: str) -> list[dict]:
-    """Send headlines to Gemini, get structured signals back."""
+    """Send headlines to Gemini, get structured signals back. Retries once on 429."""
     if not headlines:
         return []
     text = "\n".join(f"- [{h['source']}] {h['title']}" for h in headlines)
     prompt = PROMPT.replace("{headlines}", text)
-    resp = requests.post(
-        f"{GEMINI_URL}?key={api_key}",
-        json={"contents": [{"parts": [{"text": prompt}]}],
-              "generationConfig": {"temperature": 0.2}},
-        timeout=60,
-    )
-    resp.raise_for_status()
+    payload = {"contents": [{"parts": [{"text": prompt}]}],
+               "generationConfig": {"temperature": 0.2}}
+    headers = {"x-goog-api-key": api_key}  # header, not URL: keeps key out of error messages/logs
+    import time
+    for attempt in (1, 2):
+        resp = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=60)
+        if resp.status_code == 429 and attempt == 1:
+            time.sleep(20)  # free-tier per-minute limit: wait and retry once
+            continue
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Gemini API error {resp.status_code}: "
+                f"{resp.json().get('error', {}).get('message', 'unknown')[:200]}")
+        break
     raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
     return parse_signals(raw)
 
