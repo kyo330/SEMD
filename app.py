@@ -1,10 +1,3 @@
-"""
-Spanish Energy Market Dashboard
-Data: Kaggle "Hourly energy demand generation and weather" (nicholasjhana)
-  - energy_dataset.csv   : ENTSO-E hourly load, generation by source, day-ahead & actual prices (Spain, 2015-2018)
-  - weather_features.csv : hourly weather for 5 Spanish cities (OpenWeather)
-Run: streamlit run app.py
-"""
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -15,7 +8,7 @@ from sklearn.metrics import mean_absolute_error, r2_score
 
 st.set_page_config(page_title="Spanish Energy Market Dashboard", page_icon="⚡", layout="wide")
 
-# ---- light theme for all Plotly charts: white background, dark text ----
+
 import plotly.io as pio
 _light = pio.templates["plotly_white"]
 _light.layout.font.color = "#1A1A2E"
@@ -152,7 +145,8 @@ with tab_prices:
 
 # ---------------------------------------------------------------- generation tab
 with tab_gen:
-    grouped = pd.DataFrame({name: e[cols].sum(axis=1, min_count=1) for name, cols in GEN_GROUPS.items()
+    grouped = pd.DataFrame({name: e[[c for c in cols if c in e.columns]].sum(axis=1, min_count=1)
+                            for name, cols in GEN_GROUPS.items()
                             if any(c in e.columns for c in cols)})
     grouped_rs = grouped.resample(rule).mean()
     fig = go.Figure()
