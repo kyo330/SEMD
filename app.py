@@ -1,10 +1,3 @@
-"""
-Spanish Energy Market Dashboard
-Data: Kaggle "Hourly energy demand generation and weather" (nicholasjhana)
-  - energy_dataset.csv   : ENTSO-E hourly load, generation by source, day-ahead & actual prices (Spain, 2015-2018)
-  - weather_features.csv : hourly weather for 5 Spanish cities (OpenWeather)
-Run: streamlit run app.py
-"""
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -205,14 +198,14 @@ with tab_weather:
     daily["hdd"] = (comfort - daily["temp"]).clip(lower=0)
     daily["cdd"] = (daily["temp"] - comfort).clip(lower=0)
     st.markdown(
-        f"Linear correlation temp↔load: **{pearson:.2f}** — weak, because the relationship is U-shaped "
+        f"Linear correlation temp↔load: **{pearson:.2f}**, which is weak, because the relationship is U-shaped "
         f"(heating in winter, cooling in summer). Degree-day correlations: "
         f"HDD↔load **{daily['hdd'].corr(daily['load']):.2f}**, CDD↔load **{daily['cdd'].corr(daily['load']):.2f}**.")
 
     city = st.selectbox("City temperature detail", sorted(weather["city_name"].unique()))
     wc = weather[weather["city_name"] == city].set_index("dt_iso")["temp_c"].loc[str(start):str(end)].resample("D").mean()
     st.plotly_chart(px.line(x=wc.index, y=wc.values, labels={"x": "", "y": "°C"},
-                            title=f"Daily mean temperature — {city}"), **PLOTLY_KW)
+                            title=f"Daily mean temperature: {city}"), **PLOTLY_KW)
 
 # ---------------------------------------------------------------- forecast tab
 with tab_forecast:
@@ -267,7 +260,7 @@ with tab_trade:
         "information known at day-ahead auction time (the day-ahead price itself, forecast load, forecast wind/solar, "
         "calendar). If the predicted spot exceeds the day-ahead price by a threshold, **go long** (buy day-ahead, "
         "settle at spot); if it is below by the threshold, **go short**. PnL per traded hour = position × "
-        "(actual − day-ahead) in €/MWh. Chronological train/test split — no look-ahead.")
+        "(actual − day-ahead) in €/MWh. Chronological train/test split with no look-ahead.")
 
     thr = st.slider("Signal threshold (€/MWh edge required to trade)", 0.0, 10.0, 2.0, 0.5)
     test_frac = st.slider("Test fraction (most recent data)", 0.1, 0.5, 0.25, 0.05)
@@ -340,24 +333,28 @@ with tab_news:
     st.markdown(
         "Live European energy headlines are scraped from public RSS feeds, then an LLM (Gemini, free tier) "
         "converts each into a **structured signal**: commodity, region, direction, impact, and a one-line "
-        "rationale — the kind of unstructured→structured workflow a market analyst runs every morning.")
+        "rationale, the kind of unstructured→structured workflow a market analyst runs every morning.")
 
     try:
-        api_key = st.secrets.get("GEMINI_API_KEY", "")
+        groq_key = st.secrets.get("GROQ_API_KEY", "")
+        gemini_key = st.secrets.get("GEMINI_API_KEY", "")
     except Exception:  # no secrets.toml at all
-        api_key = ""
+        groq_key = gemini_key = ""
+    provider = "groq" if groq_key else "gemini"
+    api_key = groq_key or gemini_key
     if not api_key:
         st.warning(
-            "No `GEMINI_API_KEY` found in Streamlit secrets.\n\n"
-            "1. Get a free key at https://aistudio.google.com/apikey\n"
-            "2. Locally: add `GEMINI_API_KEY = \"...\"` to `.streamlit/secrets.toml` (git-ignored)\n"
+            "No `GROQ_API_KEY` or `GEMINI_API_KEY` found in Streamlit secrets.\n\n"
+            "1. Get a free key: Groq at https://console.groq.com/keys (starts `gsk_`) "
+            "or Gemini at https://aistudio.google.com/apikey (starts `AIzaSy`)\n"
+            "2. Locally: add `GROQ_API_KEY = \"...\"` to `.streamlit/secrets.toml` (git-ignored)\n"
             "3. Streamlit Cloud: App → Settings → Secrets → paste the same line, then rerun.")
     else:
         import news_agent
 
         @st.cache_data(ttl=3600, show_spinner="Scraping feeds and querying the LLM (cached hourly)...")
         def cached_drivers():
-            return news_agent.get_market_drivers(api_key)
+            return news_agent.get_market_drivers(api_key, provider=provider)
 
         col_a, col_b = st.columns([1, 5])
         if col_a.button("🔄 Refresh now"):
@@ -396,7 +393,7 @@ with tab_news:
                 for _, s in sigs.sort_values("impact", ascending=False).iterrows():
                     st.markdown(
                         f"{icon.get(s['direction'],'⚪')} **{s['headline']}**  \n"
-                        f"`{s['commodity'].upper()}` · {s['region']} · impact {'★' * int(s['impact'])} — "
+                        f"`{s['commodity'].upper()}` · {s['region']} · impact {'★' * int(s['impact'])}: "
                         f"{s['rationale']} *({s['source']})*")
 
-    st.caption("⚠️ LLM-generated interpretation of public headlines — a research aid, not trading advice.")
+    st.caption("⚠️ LLM-generated interpretation of public headlines. A research aid, not trading advice.")
