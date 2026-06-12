@@ -1,10 +1,3 @@
-"""
-Spanish Energy Market Dashboard
-Data: Kaggle "Hourly energy demand generation and weather" (nicholasjhana)
-  - energy_dataset.csv   : ENTSO-E hourly load, generation by source, day-ahead & actual prices (Spain, 2015-2018)
-  - weather_features.csv : hourly weather for 5 Spanish cities (OpenWeather)
-Run: streamlit run app.py
-"""
 import numpy as np
 import pandas as pd
 import plotly.express as px
